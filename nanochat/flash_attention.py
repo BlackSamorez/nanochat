@@ -40,7 +40,7 @@ _fa3 = _load_flash_attention_3()
 HAS_FA3 = _fa3 is not None
 
 # Override for testing: set to 'fa3', 'sdpa', or None (auto)
-_override_impl = None
+_override_impl = 'sdpa'
 
 
 def _use_fa3():

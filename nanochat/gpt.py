@@ -22,6 +22,8 @@ import torch.nn.functional as F
 from nanochat.common import get_dist_info, print0
 from nanochat.muon import Muon, DistMuon
 from nanochat.adamw import DistAdamW
+from nanochat.quartet2 import Quartet_II_Linear
+from nanochat.nvidia import NvidiaLinear
 
 # Our custom Flash Attention module that automatically uses FA3 on Hopper+ and SDPA fallback elsewhere
 from nanochat.flash_attention import flash_attn
@@ -63,10 +65,10 @@ class CausalSelfAttention(nn.Module):
         self.head_dim = self.n_embd // self.n_head
         assert self.n_embd % self.n_head == 0
         assert self.n_kv_head <= self.n_head and self.n_head % self.n_kv_head == 0
-        self.c_q = nn.Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
-        self.c_k = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
-        self.c_v = nn.Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
-        self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
+        self.c_q = Quartet_II_Linear(self.n_embd, self.n_head * self.head_dim, bias=False)
+        self.c_k = Quartet_II_Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
+        self.c_v = Quartet_II_Linear(self.n_embd, self.n_kv_head * self.head_dim, bias=False)
+        self.c_proj = Quartet_II_Linear(self.n_embd, self.n_embd, bias=False)
 
     def forward(self, x, cos_sin, window_size, kv_cache):
         B, T, C = x.size()
@@ -110,8 +112,8 @@ class CausalSelfAttention(nn.Module):
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
-        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
+        self.c_fc = Quartet_II_Linear(config.n_embd, 4 * config.n_embd, bias=False)
+        self.c_proj = Quartet_II_Linear(4 * config.n_embd, config.n_embd, bias=False)
 
     def forward(self, x):
         x = self.c_fc(x)
