@@ -25,6 +25,8 @@ from nanochat.adamw import DistAdamW
 
 from nanochat.quartet2 import Quartet_II_Linear
 from nanochat.nvidia import NvidiaLinear
+from nanochat.tetrajetv2 import TetraJetV2Linear
+
 def get_linear_layer(*args, **kwargs):
     import os
     qat_method = os.environ["QAT_METHOD"]
@@ -36,6 +38,8 @@ def get_linear_layer(*args, **kwargs):
         return NvidiaLinear(*args, **kwargs, four_over_six=False)
     elif qat_method == "46":
         return NvidiaLinear(*args, **kwargs, four_over_six=True)
+    elif qat_method == "tetrajetv2":
+        return TetraJetV2Linear(*args, **kwargs)
     else:
         raise Exception(f"Unknown QAT method: {qat_method}")
 
