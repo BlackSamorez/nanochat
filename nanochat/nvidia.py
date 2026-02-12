@@ -527,6 +527,7 @@ class Nvidia_fn(torch.autograd.Function):
         device="cuda",
     )
 
+    @torch.compile(dynamic=True)
     @staticmethod
     def forward(ctx, input, weight, disable_forward_quant: bool, disable_backward_quant: bool, four_over_six: bool):
         ctx.batch = input.shape[0]
@@ -548,7 +549,7 @@ class Nvidia_fn(torch.autograd.Function):
         ctx.save_for_backward(input, weight_fp4)
         return F.linear(input_fp4, weight_fp4)
 
-    @torch.compile(dynamic=False)
+    @torch.compile(dynamic=True)
     @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
     @staticmethod
     def backward(ctx, grad_output):

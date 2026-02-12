@@ -357,9 +357,6 @@ def eden_1x16s_fp4_kernel(
     ) * x_scaled_sign
     
     # Calculate EDEN scale
-    x_scaled = tl.reshape(x_scaled, (BLOCK_SIZE // hadamard_dim, hadamard_dim))
-    x_fp4 = tl.reshape(x_fp4, (BLOCK_SIZE // hadamard_dim, hadamard_dim))
-    
     num = tl.sum(x_scaled * x_scaled, axis=-1, keep_dims=True)
     denom = tl.sum(x_scaled * x_fp4, axis=-1, keep_dims=True)
     
@@ -370,8 +367,7 @@ def eden_1x16s_fp4_kernel(
     )
     
     # Apply EDEN scale
-    scales = tl.reshape(s_dec_b_e4m3, (BLOCK_SIZE // hadamard_dim, hadamard_dim // group_size))
-    corrected_scales = tl.reshape(scales * correction, (BLOCK_SIZE // group_size, 1))
+    corrected_scales = s_dec_b_e4m3 * correction
     
     bitscales = tl.cast(corrected_scales.to(tl.float8e4nv), tl.uint8, bitcast=True)
     prevscale = tl.cast((bitscales - 1), tl.float8e4nv, bitcast=True).to(tl.float32)

@@ -30,16 +30,29 @@ from nanochat.tetrajetv2 import TetraJetV2Linear
 def get_linear_layer(*args, **kwargs):
     import os
     qat_method = os.environ["QAT_METHOD"]
+    
+    if qat_method.endswith('_wopost'):
+        qat_method = qat_method[:-len('_wopost')]
+        disable_backward_quant=True
+        disable_forward_quant=False
+    elif qat_method.endswith('_bo'):
+        disable_backward_quant=False
+        disable_forward_quant=True
+    else:
+        disable_backward_quant=False
+        disable_forward_quant=False
+        
+    
     if qat_method == "bf16":
         return nn.Linear(*args, **kwargs)
     elif qat_method == "quartet_v2":
-        return Quartet_II_Linear(*args, **kwargs)
+        return Quartet_II_Linear(*args, **kwargs, disable_forward_quant=disable_forward_quant, disable_backward_quant=disable_backward_quant)
     elif qat_method == "nvidia":
-        return NvidiaLinear(*args, **kwargs, four_over_six=False)
+        return NvidiaLinear(*args, **kwargs, four_over_six=False, disable_forward_quant=disable_forward_quant, disable_backward_quant=disable_backward_quant)
     elif qat_method == "46":
-        return NvidiaLinear(*args, **kwargs, four_over_six=True)
+        return NvidiaLinear(*args, **kwargs, four_over_six=True, disable_forward_quant=disable_forward_quant, disable_backward_quant=disable_backward_quant)
     elif qat_method == "tetrajetv2":
-        return TetraJetV2Linear(*args, **kwargs)
+        return TetraJetV2Linear(*args, **kwargs, disable_forward_quant=disable_forward_quant, disable_backward_quant=disable_backward_quant)
     else:
         raise Exception(f"Unknown QAT method: {qat_method}")
 

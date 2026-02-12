@@ -406,7 +406,7 @@ def get_report():
     from nanochat.common import get_base_dir, get_dist_info
     ddp, ddp_rank, ddp_local_rank, ddp_world_size = get_dist_info()
     if ddp_rank == 0:
-        report_dir = os.path.join(get_base_dir(), "report", os.environ['QAT_METHOD'])
+        report_dir = os.path.join(get_base_dir(), "report", f"{os.environ['QAT_METHOD']}_{os.environ['MIXING_SEED']}")
         return Report(report_dir)
     else:
         return DummyReport()

@@ -6,6 +6,7 @@ Example tasks: MMLU, ARC-Easy, ARC-Challenge, GSM8K, HumanEval, SmolTalk.
 """
 
 import random
+import os
 
 class Task:
     """
@@ -69,7 +70,7 @@ class TaskMixture(Task):
             for local_idx in range(task_length):
                 self.index_map.append((task_idx, local_idx))
         # Deterministically shuffle to mix tasks throughout training
-        rng = random.Random(42)
+        rng = random.Random(int(os.environ['MIXING_SEED']))
         rng.shuffle(self.index_map)
         # Note: this is not the most elegant or best solution, but it's ok for now
 
