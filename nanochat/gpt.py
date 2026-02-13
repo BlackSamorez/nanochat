@@ -36,6 +36,7 @@ def get_linear_layer(*args, **kwargs):
         disable_backward_quant=True
         disable_forward_quant=False
     elif qat_method.endswith('_bo'):
+        qat_method = qat_method[:-len('_bo')]
         disable_backward_quant=False
         disable_forward_quant=True
     else:
