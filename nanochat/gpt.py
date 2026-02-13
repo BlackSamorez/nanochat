@@ -24,6 +24,7 @@ from nanochat.muon import Muon, DistMuon
 from nanochat.adamw import DistAdamW
 
 from nanochat.quartet2 import Quartet_II_Linear
+from quartet2.linear import Quartet_II_linear as Quartet_II_linear_cuda
 from nanochat.nvidia import NvidiaLinear
 from nanochat.tetrajetv2 import TetraJetV2Linear
 
@@ -48,6 +49,10 @@ def get_linear_layer(*args, **kwargs):
         return nn.Linear(*args, **kwargs)
     elif qat_method == "quartet_v2":
         return Quartet_II_Linear(*args, **kwargs, disable_forward_quant=disable_forward_quant, disable_backward_quant=disable_backward_quant)
+    elif qat_method == "quartet_v2_real":
+        assert not disable_backward_quant
+        assert not disable_forward_quant
+        return Quartet_II_linear_cuda(*args, **kwargs, four_over_six=True)
     elif qat_method == "nvidia":
         return NvidiaLinear(*args, **kwargs, four_over_six=False, disable_forward_quant=disable_forward_quant, disable_backward_quant=disable_backward_quant)
     elif qat_method == "46":
