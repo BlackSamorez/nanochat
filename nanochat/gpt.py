@@ -52,7 +52,7 @@ def get_linear_layer(*args, **kwargs):
     elif qat_method == "quartet_v2_real":
         assert not disable_backward_quant
         assert not disable_forward_quant
-        return Quartet_II_linear_cuda(*args, **kwargs, four_over_six=True)
+        return Quartet_II_linear_cuda(*args, **kwargs, four_over_six=True, dtype=torch.float32)
     elif qat_method == "nvidia":
         return NvidiaLinear(*args, **kwargs, four_over_six=False, disable_forward_quant=disable_forward_quant, disable_backward_quant=disable_backward_quant)
     elif qat_method == "46":
