@@ -13,7 +13,7 @@
 # Default intermediate artifacts directory is in ~/.cache/nanochat
 export MIXING_SEED=42
 export QAT_METHOD="quartet_v2_real"
-export WANDB_RUN="quartet_v2_real"
+export WANDB_RUN="quartet_v2-b200-2"
 export OMP_NUM_THREADS=1
 export NANOCHAT_BASE_DIR="/localhome/apanfero/.cache/nanochat"
 export NPROC_PER_NODE=8
@@ -86,11 +86,11 @@ echo "Waiting for dataset download to complete..."
 NPROC_PER_NODE=8
 
 # pretrain the d20 model
-torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=20 --target-param-data-ratio=20 --core-metric-every=0 --sample-every=0 --run=$WANDB_RUN --device-batch-size=16 --model-tag="$QAT_METHOD"
+torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=20 --target-param-data-ratio=20 --core-metric-every=0 --sample-every=0 --run=$WANDB_RUN --device-batch-size=16 --model-tag=$WANDB_RUN
 # evaluate the model on a larger chunk of train/val data and draw some samples
-# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_loss --model-tag="$QAT_METHOD"
+torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_loss --model-tag=$WANDB_RUN
 # evaluate the model on CORE tasks
-# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_eval --model-tag="$QAT_METHOD"
+torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_eval --model-tag=$WANDB_RUN
 
 # -----------------------------------------------------------------------------
 # Midtraining (teach the model conversation special tokens, tool use, multiple choice)

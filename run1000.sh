@@ -1,135 +1,99 @@
 #!/bin/bash
-#SBATCH --account=a140
-#SBATCH --time=00:30:00
-#SBATCH --partition=debug
-#SBATCH --nodes=2
-#SBATCH --ntasks-per-node=1
-#SBATCH --gpus-per-node=4
-#SBATCH --cpus-per-task=288
-#SBATCH --mem=460000
-#SBATCH --environment=/capstor/store/cscs/swissai/a140/containers/megatron.toml
-#SBATCH --no-requeue
-#SBATCH --output=/iopsstor/scratch/cscs/blacksamorez/nanochat/logs/debug_%A.out
-#SBATCH --error=/iopsstor/scratch/cscs/blacksamorez/nanochat/logs/debug_%A.err
 
-set -euo pipefail
+# The $1000 tier of nanochat
+# Designed to run end-to-end for $1000/24 ~= 41.6 hours on an 8XH100 node
+# A bit sparser on comments, see speedrun.sh for more detail
 
-# export QAT_METHOD="bf16"
-export QAT_METHOD="quartet_v2"
-# export QAT_METHOD="nvidia"
-# export QAT_METHOD="46"
-
-export WANDB_RUN="1000-${QAT_METHOD}"
-
-WORKDIR="/iopsstor/scratch/cscs/blacksamorez/nanochat"
-
-# Match your allocation: 4 GPUs per node => 4 processes per node
-NPROC_PER_NODE=4
-
-cd "$WORKDIR"
-
-# Master Address Logic
-export MASTER_ADDR
-MASTER_ADDR="$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)"
-export MASTER_PORT=29500
-echo "Master: $MASTER_ADDR:$MASTER_PORT | Nodes: $SLURM_NNODES | GPUs/Node: $NPROC_PER_NODE"
-
-# ---- srun + torchrun wrapper (one torchrun per node; torchrun spawns GPU workers) ----
-# SLURM_PROCID is 0..(ntasks-1); with ntasks-per-node=1, it acts as the node_rank. :contentReference[oaicite:1]{index=1}
-# Using srun with --ntasks=$SLURM_NNODES and --ntasks-per-node=1 ensures 1 task (launcher) per node. :contentReference[oaicite:2]{index=2}
-torchrun_srun () {
-    local user_args="$*"
-
-    CMD="cd $WORKDIR && \
-        pip uninstall -y torch &&
-        pip install uv && \
-        uv venv /tmp/venv --allow-existing && \
-        UV_PROJECT_ENVIRONMENT=/tmp/venv uv sync --extra gpu && \
-        source /tmp/venv/bin/activate && \
-        torchrun \
-          --nnodes=$SLURM_NNODES \
-          --nproc_per_node=$NPROC_PER_NODE \
-          --rdzv_id=$SLURM_JOB_ID \
-          --rdzv_backend=c10d \
-          --rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT \
-          --node_rank=\${SLURM_PROCID} \
-          ${user_args}
-    "
-
-    srun \
-      --kill-on-bad-exit=1 \
-      --export=ALL \
-      --output="/iopsstor/scratch/cscs/blacksamorez/nanochat/logs/%x_%j_%s_t%t.out" \
-      --error="/iopsstor/scratch/cscs/blacksamorez/nanochat/logs/%x_%j_%s_t%t.err" \
-      --label \
-      bash -lc "$CMD"
-}
-
-# -------------------------------------------------------------------
 # all the setup stuff
+export MIXING_SEED=42
+export QAT_METHOD="46"
+export WANDB_RUN="1000-46-b200"
 export OMP_NUM_THREADS=1
-export NANOCHAT_BASE_DIR="${SCRATCH}/.cache/nanochat"
-mkdir -p "$NANOCHAT_BASE_DIR"
+export NANOCHAT_BASE_DIR="/localhome/apanfero/.cache/nanochat"
+export NPROC_PER_NODE=8
+export CUDA_VISIBLE_DEIVCES=0,1,2,3,4,6,7
+mkdir -p $NANOCHAT_BASE_DIR
 
-# ---- Fix curl CA bundle path (common in containers) ----
-# If your environment points curl at a non-existent bundle, override it.
-for c in \
-  /etc/ssl/certs/ca-certificates.crt \
-  /etc/pki/tls/certs/ca-bundle.crt \
-  /etc/ssl/ca-bundle.crt \
-  /etc/ssl/cert.pem
-do
-  if [ -r "$c" ]; then
-    export SSL_CERT_FILE="$c"
-    export CURL_CA_BUNDLE="$c"
-    export REQUESTS_CA_BUNDLE="$c"
-    echo "Using CA bundle: $c"
-    break
-  fi
-done
-
-pip uninstall -y torch
-pip install uv
-[ -d "/tmp/venv" ] || uv venv /tmp/venv
-UV_PROJECT_ENVIRONMENT="/tmp/venv" uv sync --extra gpu
-source /tmp/venv/bin/activate
-
-# System info
-echo "NVIDIA-smi"
-nvidia-smi
-
-# IMPORTANT for srun-launched shells: export WANDB_RUN so it exists on all nodes/steps
-export WANDB_RUN="${WANDB_RUN:-dummy}"
-
-echo "Resetting the report"
-python -m nanochat.report reset
-wget --no-check-certificate -O "$NANOCHAT_BASE_DIR/identity_conversations.jsonl" \
-  https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
+command -v uv &> /dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+[ -d ".venv" ] || uv venv
+# uv sync --extra gpu
+source .venv/bin/activate
+if [ -z "$WANDB_RUN" ]; then
+    WANDB_RUN=dummy
+fi
+# python -m nanochat.report reset
+# curl -L -o $NANOCHAT_BASE_DIR/identity_conversations.jsonl https://karpathy-public.s3.us-west-2.amazonaws.com/identity_conversations.jsonl
 
 # train tokenizer on ~4B characters and kick off download of the rest for pretraining
-echo "Downloading the data"
 # python -m nanochat.dataset -n 16
-# python -m nanochat.dataset -n 1200 &
+# start downloading the rest of the shards for a total of 1200 (see below why 1200)
+# python -m nanochat.dataset -n 1200
+# todo: download the rest of it
 # python -m scripts.tok_train --max-chars=4000000000 --vocab-size=65536
 # python -m scripts.tok_eval
 
-# -------------------------------------------------------------------
-# distributed runs (ALL torchrun calls now go through srun)
-echo "Pre-training"
-torchrun_srun -m scripts.base_train -- --depth=32 --target-param-data-ratio=20 --device-batch-size=4 --save-every=10000 --resume-from-step=-1 --run="$WANDB_RUN" --model-tag="$QAT_METHOD"
-torchrun_srun -m scripts.base_loss -- --model-tag="$QAT_METHOD"
-torchrun_srun -m scripts.base_eval --  --model-tag="$QAT_METHOD"
+# Documenting my process for determining the hyperparameters for this run1000.sh script:
+# We want a budget of approx. $1000 ~= 41.6 hours of 8XH100 compute
+# 1) I guessed the model size for this to be about depth=32
+# 2) Determine the device_batch_size that fits:
+# Running the base_train.py script with --depth=32, I saw that --device-batch-size=16
+# runs out of memory, but --device-batch-size=8 fits. Inspecting `nvidia-smi` during training,
+# I saw all GPUs were at about 78/80GB VRAM, so it just barely fits and we have good MFU at ~50%.
+# So the training script was running ok and showed:
+# Vocab size: 65,536
+# num_layers: 32
+# model_dim: 2048
+# num_heads: 16
+# num_kv_heads: 16
+# Tokens / micro-batch / rank: 8 x 2048 = 16,384
+# Tokens / micro-batch: 131,072
+# Total batch size 524,288 => gradient accumulation steps: 4
+# Number of parameters: 1,879,048,192
+# Estimated FLOPs per token: 1.207960e+10
+# Calculated number of iterations from target data:param ratio: 71,680
+# Total number of training tokens: 37,580,963,840
+# Tokens : Params ratio: 20.00
+# Total training FLOPs estimate: 4.539628e+20
+# step 00004/71680 (0.01%) | loss: 8.813754 | lrm: 1.00 | dt: 1571.88ms | tok/sec: 83,385 | mfu: 50.92 | total time: 0.00m
+# step 00005/71680 (0.01%) | loss: 8.488074 | lrm: 1.00 | dt: 1572.76ms | tok/sec: 83,338 | mfu: 50.89 | total time: 0.00m
+# ...
+# 3) validate that the runtime fits our budget:
+# The training script uses the Chinchilla scaling law to compute-optimally set #tokens = 20 * #params. In particular:
+# The script shows that we will be training for 71,680 steps, and each step takes 1.574s so:
+# estimated time to train: 71,680 * 1.574s / 60 / 60 = 31.3 hours.
+# This is OK, fits our budget, and leaves ~10 hours for midtraining and SFT and evals and maybe RL.
+# It's possible that we might even fit depth=33 or depth=34, but for now let's go along with this.
+# 4) The last thing to pay attention to is the amount of training data required for the run.
+# The script above calculated that "Total number of training tokens: 37,580,963,840"
+# The tok_eval.py script reports about ~4.8 chars/token on average for the default tokenizer settings.
+# So ~38B tokens # ~4.8 chars/token = ~185B chars.
+# Each data shard is ~250M chars, so we need ~185B / 250M ~= 740 shards.
+# For safety, I bumped that up to 800 shards.
+# The new DataLoader wastes about 35% of tokens to cropping, so 800 / (1 - 0.35) ~= 1200 shards are needed.
+# => why up above I used -n 1200 when pre-downloading dataset shards.
+# If we didn't have enough data, the training script would loop around and do multiple epochs over the same data,
+# which would decrease model performance. Possibly 2, 3 or so epochs is ~ok, but certainly not ideal and at 10+ epochs we'd
+# start to overfit hard.
+# 5) That's it, everything else (e.g. the learning rates) is adjusted automatically by the training script.
+
+# Number of processes/GPUs to use
+NPROC_PER_NODE=8
+
+# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_train -- --depth=32 --target-param-data-ratio=20 --device-batch-size=16 --core-metric-every=0 --sample-every=0 --run=$WANDB_RUN
+# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_loss
+# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.base_eval
 
 # midtrain
-torchrun_srun -m scripts.mid_train -- --device-batch-size=4 --run="$WANDB_RUN" --model-tag="$QAT_METHOD"
-torchrun_srun -m scripts.chat_eval -- -i mid --model-tag="$QAT_METHOD"
+# NOTE: ensure that we use the same device_batch_size here as the base training script.
+# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.mid_train -- --device-batch-size=8 --run=$WANDB_RUN
+# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i mid
 
 # sft
-torchrun_srun -m scripts.chat_sft -- --run="$WANDB_RUN" --model-tag="$QAT_METHOD"
-torchrun_srun -m scripts.chat_eval -- -i sft --model-tag="$QAT_METHOD"
+# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_sft -- --run=$WANDB_RUN
+# torchrun --rdzv_backend=static --rdzv_id=speedrun --nproc_per_node=$NPROC_PER_NODE -m scripts.chat_eval -- -i sft
 
 # generate final report
-python -m nanochat.report generate
+# python -m nanochat.report generate
 
 # talk to it
 # python -m scripts.chat_web
